@@ -1046,7 +1046,9 @@ class ViT_face_landmark_patch8_4simmin_glo_loc(nn.Module):
         self.patch_to_embedding = nn.Linear(patch_dim, dim)
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.dropout = nn.Dropout(emb_dropout)
-
+        # Add after self.global_token initialization
+        self.landmark_refine = TrainableLandmarkHead(in_features=160, num_landmarks=self.row_num*self.row_num)
+        self.landmark_mse = nn.MSELoss()
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
 
         self.pool = pool
@@ -1110,6 +1112,8 @@ class ViT_face_landmark_patch8_4simmin_glo_loc(nn.Module):
         # pdb.set_trace()
 
         theta0 = theta.mean(dim=(-2, -1))#average pooling   for cnn
+        # After: theta0 = theta.mean(dim=(-2, -1))
+        landmark_offsets = self.landmark_refine(theta0)  # [B, 196, 2]
         theta=self.output_layer(theta0)
         glo_token=self.global_token(theta0).view(-1,1,self.dim)
         
@@ -1133,6 +1137,12 @@ class ViT_face_landmark_patch8_4simmin_glo_loc(nn.Module):
         # theta=theta.round()
         # theta=theta.type(torch.int32)
         theta=theta.view(-1,self.row_num*self.row_num,2)
+        # After: theta = theta.view(-1, self.row_num*self.row_num, 2)
+        if self.training and Random_prob:
+    # Refine landmarks with learned offsets
+            theta_refined = theta + landmark_offsets * 5.0  # scale factor
+    # Clamp to valid range [0, 111]
+            theta_refined = torch.clamp(theta_refined, 0, 111)
         self.theta=theta#.detach()
         # pdb.set_trace()
 
@@ -1215,6 +1225,44 @@ class mobile_dino(nn.Module):
         theta0 = theta.mean(dim=(-2, -1))#average pooling   for cnn
         theta=self.output_layer(theta0)
         return theta
+class HybridFusion(nn.Module):
+    """Fuses Part fViT with ResNet via attention"""
+    def __init__(self, vit_dim=768, resnet_dim=512, out_dim=768):
+        super().__init__()
+        # Project ResNet features to ViT space
+        self.resnet_proj = nn.Linear(resnet_dim, vit_dim)
+        
+        # Cross-attention: ViT queries, ResNet keys/values
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=vit_dim,
+            num_heads=8,
+            dropout=0.1,
+            batch_first=True
+        )
+        
+        self.norm = nn.LayerNorm(vit_dim)
+        self.fusion = nn.Sequential(
+            nn.Linear(vit_dim * 2, vit_dim),
+            nn.GELU(),
+            nn.Dropout(0.1)
+        )
+        
+    def forward(self, vit_feats, resnet_feats):
+        """
+        vit_feats: [B, vit_dim]
+        resnet_feats: [B, resnet_dim]
+        """
+        # Project ResNet
+        resnet_proj = self.resnet_proj(resnet_feats).unsqueeze(1)  # [B, 1, vit_dim]
+        vit_query = vit_feats.unsqueeze(1)  # [B, 1, vit_dim]
+        
+        # Cross-attention
+        attn_out, _ = self.cross_attn(vit_query, resnet_proj, resnet_proj)
+        attn_out = self.norm(attn_out.squeeze(1) + vit_feats)
+        
+        # Concatenate and fuse
+        fused = torch.cat([vit_feats, attn_out], dim=-1)
+        return self.fusion(fused)
 class face_landmark_4simmin_glo_loc(nn.Module):
     def __init__(self, *, loss_type, GPU_ID, num_class, image_size, patch_size, dim, depth, heads, mlp_dim, pool = 'cls',num_patches=None, channels = 3, dim_head = 64, dropout = 0., emb_dropout = 0.,fp16=True):
         super().__init__()
@@ -1408,7 +1456,21 @@ class face_landmark_4simmin_glo_loc(nn.Module):
                 x=extract_patches_pytorch_gridsample(x_Aug,theta[:,:num_land],patch_shape=self.patch_shape,num_landm=num_land)
             return theta,x
 
-
+class TrainableLandmarkHead(nn.Module):
+    """Refinement head for dynamic landmark updates during SSL"""
+    def __init__(self, in_features=160, num_landmarks=196):
+        super().__init__()
+        self.refine_head = nn.Sequential(
+            nn.Linear(in_features, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, num_landmarks * 2)  # x,y offsets
+        )
+        
+    def forward(self, features):
+        # features: [B, 160] from MobileNetV3
+        offsets = self.refine_head(features)  # [B, 392]
+        return offsets.view(-1, 196, 2)  # [B, 196, 2]
 class ViTs_face_overlap_4simmim(nn.Module):
     def __init__(self, *, loss_type, GPU_ID, num_class, image_size, patch_size, ac_patch_size,
                          pad, dim, depth, heads, mlp_dim, pool = 'cls', channels = 3, dim_head = 64, dropout = 0., emb_dropout = 0.):

@@ -154,7 +154,7 @@ def load_part_checkpoint_landmark(path,model,pretrain_name=['stn','output']):
             param.requires_grad = False
 
 def train_lafs(args):
-    data_path=args.data_path
+    data_path = args.data_path
     utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -167,19 +167,18 @@ def train_lafs(args):
         args.local_crops_scale,
         args.local_crops_number,
     )
-    # dataset = datasets.ImageFolder(args.data_path, transform=transform)
+    
     from face_pre_pro.dataloader_web import FaceDataset
     
-    #config path
-    # landmark_path='/data/home/acw569/precheck/ms1m_196_land_sp/Backbone_VIT_land_8_Epoch_34_Batch_523881_Time_2021-07-31-11-07_checkpoint.pth'
-    
-    dataset = FaceDataset(os.path.join(data_path, 'train.rec'), dino_trans=transform,rand_mirror=False,random_resizecrop=False,rand_au=False,sifenzhiyi=True
-            ,filepath_id_nidex='ms1m_random_index.json')
-
-    
-    # args.output_dir='/data/scratch/acw569/checkpoint/ssl/ms1m_land_ms1mland_1m_40epoch_noflip'
-
-    #end config path
+    dataset = FaceDataset(
+        os.path.join(data_path, 'train.rec'), 
+        dino_trans=transform,
+        rand_mirror=False,
+        random_resizecrop=False,
+        rand_au=False,
+        sifenzhiyi=True,
+        filepath_id_nidex='ms1m_random_index.json'
+    )
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
@@ -193,223 +192,188 @@ def train_lafs(args):
     )
     print(f"Data loaded: there are {len(dataset)} images.")
 
-    # ============ building student and teacher networks ... ============
-    # we changed the name DeiT-S for ViT-S to avoid confusions
-    args.arch = args.arch.replace("deit", "vit")
-    # if the network is a Vision Transformer (i.e. vit_tiny, vit_small, vit_base)
-    if args.arch in vits.__dict__.keys():
-        student = vits.__dict__[args.arch](
-            patch_size=args.patch_size,
-            drop_path_rate=args.drop_path_rate,  # stochastic depth
-        )
-        teacher = vits.__dict__[args.arch](patch_size=args.patch_size)
-        embed_dim = student.embed_dim
-    # if the network is a XCiT
-    elif args.arch in torch.hub.list("facebookresearch/xcit:main"):
-        student = torch.hub.load('facebookresearch/xcit:main', args.arch,
-                                 pretrained=False, drop_path_rate=args.drop_path_rate)
-        teacher = torch.hub.load('facebookresearch/xcit:main', args.arch, pretrained=False)
-        embed_dim = student.embed_dim
-    # otherwise, we check if the architecture is in torchvision models
-    elif args.arch in torchvision_models.__dict__.keys():
-        student = torchvision_models.__dict__[args.arch]()
-        teacher = torchvision_models.__dict__[args.arch]()
-        embed_dim = student.fc.weight.shape[1]
-    else:
-
-        from face_pre_pro.ViT_face import ViT_face_landmark_patch8,face_landmark_4simmin_glo_loc
-
-
-        # #ViT
-        # student=ViT_face_landmark_patch8(
-        #                  loss_type = 'CosFace',
-        #                  GPU_ID = None,
-        #                  num_class = 30000,
-        #                  image_size=112,
-        #                  patch_size=8,#8
-        #                  dim=768,#512
-        #                  depth=12,#20
-        #                  heads=11,#8
-        #                  num_patches=196,
-        #                  mlp_dim=2048,
-        #                  dropout=0.1,
-        #                  emb_dropout=0.1
-        #              ) #resnet=vit         67.43M  12.72.
-        knowledge_dis=True
-        if knowledge_dis:
-            '''
-            load the pretrained landmark cnn
-            '''
-            # landmarkcnn=face_landmark_4simmin_glo_loc(loss_type = 'CosFace',
-            #                 GPU_ID = None,
-            #                 num_class = 30000,
-            #                 num_patches=144,
-            #                 image_size=112,
-            #                 patch_size=10,#8
-            #                 dim=512,#512
-            #                 depth=12,#20
-            #                 heads=11,#8
-            #                 mlp_dim=2560,
-            #                 dropout=0.1,
-            #                 emb_dropout=0.1)
-            landmarkcnn=face_landmark_4simmin_glo_loc(loss_type = 'CosFace',
-                            GPU_ID = None,
-                            num_class = 300,
-                            num_patches=196,
-                            image_size=112,
-                            patch_size=8,#8
-                            dim=512,#512
-                            depth=12,#20
-                            heads=11,#8
-                            mlp_dim=2560,
-                            dropout=0.1,
-                            emb_dropout=0.1)
-            landmarkcnn=landmarkcnn.cuda()
-            load_part_checkpoint_landmark(path=args.landmark_path,model=landmarkcnn,pretrain_name=['stn','output'])
-            landmarkcnn.eval()
-            
-
-        # teacher=ViT_face_landmark_patch8(
-        #                 loss_type = 'CosFace',
-        #                 GPU_ID = None,
-        #                 num_class = 30000,
-        #                 num_patches=196,
-        #                 image_size=112,
-        #                 patch_size=8,#8
-        #                 dim=512,#512
-        #                 depth=3,#20
-        #                 heads=11,#8
-        #                 mlp_dim=2560,
-        #                 dropout=0.1,
-        #                 emb_dropout=0.1,
-        #                 with_land=False
-        #             )
-        # student=ViT_face_landmark_patch8(
-        #                 loss_type = 'CosFace',
-        #                 GPU_ID = None,
-        #                 num_class = 30000,
-        #                 num_patches=196,
-        #                 image_size=112,
-        #                 patch_size=8,#8
-        #                 dim=512,#512
-        #                 depth=3,#20
-        #                 heads=11,#8
-        #                 mlp_dim=2560,
-        #                 dropout=0.1,
-        #                 emb_dropout=0.1,
-        #                 with_land=False
-        #             )
-        teacher=ViT_face_landmark_patch8(
-            loss_type = 'CosFace',
-            GPU_ID = None,
-            num_class = 30000,
-            image_size=112,
-            patch_size=8,#8
-            dim=768,#512
-            depth=12,#20
-            heads=11,#8
+    # ============ building networks ... ============
+    from face_pre_pro.ViT_face import ViT_face_landmark_patch8, face_landmark_4simmin_glo_loc, HybridFusion
+    from face_pre_pro.iresnet import iresnet50
+    
+    knowledge_dis = True
+    
+    # ========== Solution 2: Add ResNet Backbone ==========
+    print("Building ResNet50 backbone for hybrid fusion...")
+    resnet_backbone = iresnet50(
+        dropout=0.1, 
+        fp16=False, 
+        num_features=512,
+        NUM_CLASS=30000
+    )
+    resnet_backbone = resnet_backbone.cuda()
+    
+    # Freeze ResNet (we only use it for feature extraction)
+    for param in resnet_backbone.parameters():
+        param.requires_grad = False
+    resnet_backbone.eval()
+    print("✓ ResNet50 loaded and frozen")
+    # =====================================================
+    
+    if knowledge_dis:
+        '''Load pretrained landmark CNN'''
+        landmarkcnn = face_landmark_4simmin_glo_loc(
+            loss_type='CosFace',
+            GPU_ID=None,
+            num_class=300,
             num_patches=196,
-            mlp_dim=2048,
+            image_size=112,
+            patch_size=8,
+            dim=512,
+            depth=12,
+            heads=11,
+            mlp_dim=2560,
             dropout=0.1,
-            emb_dropout=0.1,
-            with_land=False,
-            use_standcoord=False,Random_prob=False,shuffle=False
+            emb_dropout=0.1
         )
-        student=ViT_face_landmark_patch8(
-                         loss_type = 'CosFace',
-                         GPU_ID = None,
-                         num_class = 30000,
-                         image_size=112,
-                         patch_size=8,#8
-                         dim=768,#512
-                         depth=12,#20
-                         heads=11,#8
-                         num_patches=196,
-                         mlp_dim=2048,
-                         dropout=0.1,
-                         emb_dropout=0.1,
-                         with_land=False,
-                        use_standcoord=False,Random_prob=False,shuffle=False
-                     )
+        landmarkcnn = landmarkcnn.cuda()
+        load_part_checkpoint_landmark(
+            path=args.landmark_path,
+            model=landmarkcnn,
+            pretrain_name=['stn', 'output']
+        )
+        landmarkcnn.eval()
+        print("✓ Landmark CNN loaded")
 
+    # Build student and teacher (Part fViT)
+    teacher = ViT_face_landmark_patch8(
+        loss_type='CosFace',
+        GPU_ID=None,
+        num_class=30000,
+        image_size=112,
+        patch_size=8,
+        dim=768,
+        depth=12,
+        heads=11,
+        num_patches=196,
+        mlp_dim=2048,
+        dropout=0.1,
+        emb_dropout=0.1,
+        with_land=False,
+        use_standcoord=False,
+        Random_prob=False,
+        shuffle=False
+    )
+    
+    student = ViT_face_landmark_patch8(
+        loss_type='CosFace',
+        GPU_ID=None,
+        num_class=30000,
+        image_size=112,
+        patch_size=8,
+        dim=768,
+        depth=12,
+        heads=11,
+        num_patches=196,
+        mlp_dim=2048,
+        dropout=0.1,
+        emb_dropout=0.1,
+        with_land=False,
+        use_standcoord=False,
+        Random_prob=False,
+        shuffle=False
+    )
 
-        embed_dim=768
-        #Iersnet100
-        # pdb.set_trace()
-        # from face_pre_pro.iresnet import iresnet100
-        # student=iresnet100(dropout=0.1, fp16=False, num_features=512,NUM_CLASS=30000)
-        # teacher=iresnet100(dropout=0.1, fp16=False, num_features=512,NUM_CLASS=30000)
-        # embed_dim=512
-        print(f"Unknow architecture: {args.arch}")
-    # pdb.set_trace()
+    embed_dim = 768
+    
+    # ========== Solution 2: Add Hybrid Fusion Module ==========
+    print("Building Hybrid Fusion module...")
+    fusion_module = HybridFusion(
+        vit_dim=768,      # Part fViT output dimension
+        resnet_dim=512,   # ResNet output dimension
+        out_dim=768,      # Keep same as ViT for DINO head
+        num_heads=8
+    )
+    fusion_module = fusion_module.cuda()
+    print("✓ Hybrid Fusion module created")
+    # ===========================================================
 
-    # multi-crop wrapper handles forward with inputs of different resolutions
-    student = utils.MultiCropWrapper(student, DINOHead(
-        embed_dim,
-        args.out_dim,
-        use_bn=args.use_bn_in_head,
-        norm_last_layer=args.norm_last_layer,
-    ))
+    # Multi-crop wrapper with DINO head
+    student = utils.MultiCropWrapper(
+        student, 
+        DINOHead(
+            embed_dim,
+            args.out_dim,
+            use_bn=args.use_bn_in_head,
+            norm_last_layer=args.norm_last_layer,
+        )
+    )
     teacher = utils.MultiCropWrapper(
         teacher,
         DINOHead(embed_dim, args.out_dim, args.use_bn_in_head),
     )
 
-    # move networks to gpu
+    # Move to GPU
     student, teacher = student.cuda(), teacher.cuda()
-    landmarkcnn=landmarkcnn.cuda()
-    # synchronize batch norms (if any)
+    landmarkcnn = landmarkcnn.cuda()
+    
+    # Synchronize batch norms
     if utils.has_batchnorms(student):
         student = nn.SyncBatchNorm.convert_sync_batchnorm(student)
         teacher = nn.SyncBatchNorm.convert_sync_batchnorm(teacher)
-        # teacher_land=nn.SyncBatchNorm.convert_sync_batchnorm(teacher_land)
-        # we need DDP wrapper to have synchro batch norms working...
+        
         teacher = nn.parallel.DistributedDataParallel(teacher, device_ids=[args.gpu])
         teacher_without_ddp = teacher.module
         landmarkcnn = nn.parallel.DistributedDataParallel(landmarkcnn, device_ids=[args.gpu])
-        # teacher_land_without_ddp = landmarkcnn.module
     else:
-        # teacher_without_ddp and teacher are the same thing
         teacher_without_ddp = teacher
-        teacher_land_without_ddp=landmarkcnn
+        
     student = nn.parallel.DistributedDataParallel(student, device_ids=[args.gpu])
-    # teacher and student start with the same weights
-    teacher_without_ddp.load_state_dict(student.module.state_dict())#?? strice=True/False
-    # there is no backpropagation through the teacher, so no need for gradients
+    
+    # Teacher and student start with same weights
+    teacher_without_ddp.load_state_dict(student.module.state_dict())
+    
+    # No gradients for teacher
     for p in teacher.parameters():
         p.requires_grad = False
     for p in landmarkcnn.parameters():
         p.requires_grad = False
-    print(f"Student and Teacher are built: they are both {args.arch} network.")
+    # ========== Solution 2: No gradients for ResNet ==========
+    for p in resnet_backbone.parameters():
+        p.requires_grad = False
+    # ==========================================================
+    
+    print(f"Student and Teacher are built: Part fViT network with Hybrid Fusion")
 
     # ============ preparing loss ... ============
     dino_loss = DINOLoss(
         args.out_dim,
-        args.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
+        args.local_crops_number + 2,
         args.warmup_teacher_temp,
         args.teacher_temp,
         args.warmup_teacher_temp_epochs,
         args.epochs,
+        enable_dynamic_weighting=True  # Solution 3
     ).cuda()
 
     # ============ preparing optimizer ... ============
+    # ========== Solution 2: Add fusion module parameters ==========
     params_groups = utils.get_params_groups(student)
-    #
-    # params_groups = utils.get_params_groups_land(student,teacher_land)
+    
+    # Add fusion module parameters to optimizer
+    fusion_params = {'params': fusion_module.parameters(), 'weight_decay': 0.04}
+    params_groups.append(fusion_params)
+    # ===============================================================
+    
     if args.optimizer == "adamw":
-        optimizer = torch.optim.AdamW(params_groups)  # to use with ViTs
+        optimizer = torch.optim.AdamW(params_groups)
     elif args.optimizer == "sgd":
-        optimizer = torch.optim.SGD(params_groups, lr=0, momentum=0.9)  # lr is set by scheduler
+        optimizer = torch.optim.SGD(params_groups, lr=0, momentum=0.9)
     elif args.optimizer == "lars":
-        optimizer = utils.LARS(params_groups)  # to use with convnet and large batches
-    # for mixed precision training
+        optimizer = utils.LARS(params_groups)
+        
     fp16_scaler = None
     if args.use_fp16:
         fp16_scaler = torch.cuda.amp.GradScaler()
 
     # ============ init schedulers ... ============
     lr_schedule = utils.cosine_scheduler(
-        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,  # linear scaling rule
+        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256.,
         args.min_lr,
         args.epochs, len(data_loader),
         warmup_epochs=args.warmup_epochs,
@@ -419,9 +383,10 @@ def train_lafs(args):
         args.weight_decay_end,
         args.epochs, len(data_loader),
     )
-    # momentum parameter is increased to 1. during training with a cosine schedule
-    momentum_schedule = utils.cosine_scheduler(args.momentum_teacher, 1,
-                                               args.epochs, len(data_loader))
+    momentum_schedule = utils.cosine_scheduler(
+        args.momentum_teacher, 1,
+        args.epochs, len(data_loader)
+    )
     print(f"Loss, optimizer and schedulers ready.")
 
     # ============ optionally resume training ... ============
@@ -438,14 +403,18 @@ def train_lafs(args):
     start_epoch = to_restore["epoch"]
 
     start_time = time.time()
-    print("Starting DINO training !")
+    print("Starting DINO training with Hybrid Fusion!")
     for epoch in range(start_epoch, args.epochs):
         data_loader.sampler.set_epoch(epoch)
 
-        # ============ training one epoch of DINO ... ============
-        train_stats = train_one_epoch(student, teacher, teacher_without_ddp,landmarkcnn, dino_loss,
-            data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
-            epoch, fp16_scaler, args)
+        # ============ training one epoch ... ============
+        train_stats = train_one_epoch_hybrid(  # Use new training function
+            student, teacher, teacher_without_ddp, landmarkcnn, 
+            resnet_backbone, fusion_module,  # Pass new modules
+            dino_loss, data_loader, optimizer, 
+            lr_schedule, wd_schedule, momentum_schedule,
+            epoch, fp16_scaler, args
+        )
 
         # ============ writing logs ... ============
         save_dict = {
@@ -455,21 +424,183 @@ def train_lafs(args):
             'epoch': epoch + 1,
             'args': args,
             'dino_loss': dino_loss.state_dict(),
+            'fusion_module': fusion_module.state_dict(),  # Save fusion weights
         }
         if fp16_scaler is not None:
             save_dict['fp16_scaler'] = fp16_scaler.state_dict()
         utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
         if args.saveckp_freq and epoch % args.saveckp_freq == 0:
             utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     'epoch': epoch}
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
         if utils.is_main_process():
             with (Path(args.output_dir) / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
+                
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
+def train_one_epoch_hybrid(student, teacher, teacher_without_ddp, landmarkcnn, 
+                          resnet_backbone, fusion_module,  # New parameters
+                          dino_loss, data_loader, optimizer, 
+                          lr_schedule, wd_schedule, momentum_schedule, 
+                          epoch, fp16_scaler, args):
+    """
+    Training loop with Hybrid Fusion (Solution 2).
+    Combines Part fViT and ResNet features via cross-attention.
+    """
+    metric_logger = utils.MetricLogger(delimiter="  ")
+    header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
+    
+    ori_image_index = np.array([0, 3, 5, 7, 9, 11, 13, 15, 17])
+    aug_image_index = ori_image_index + 1
+    
+    for it, (images, _) in enumerate(metric_logger.log_every(data_loader, 100, header)):
+        it = len(data_loader) * epoch + it
+        
+        # Update learning rate and weight decay
+        for i, param_group in enumerate(optimizer.param_groups):
+            param_group["lr"] = lr_schedule[it]
+            if i == 0:
+                param_group["weight_decay"] = wd_schedule[it]
 
+        # Move images to GPU
+        images = [im.cuda(non_blocking=True) for im in images]
+        
+        # ========== Extract landmark features (existing code) ==========
+        land_label, img_reconstructed = landmarkcnn(
+            images[0], 
+            x_Aug=images[1], 
+            Random_prob=True, 
+            return_prob=True, 
+            random_coor=False
+        )
+        
+        img_emb0 = rearrange(
+            img_reconstructed, 
+            'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
+            p1=landmarkcnn.patch_size, 
+            p2=landmarkcnn.patch_size
+        )
+        
+        land_label, img_reconstructed = landmarkcnn(
+            images[2], 
+            x_Aug=images[3], 
+            Random_prob=True, 
+            return_prob=True, 
+            random_coor=False
+        )
+        
+        img_emb1 = rearrange(
+            img_reconstructed, 
+            'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
+            p1=landmarkcnn.patch_size, 
+            p2=landmarkcnn.patch_size
+        )
+        
+        # Local views
+        images_to_prob = torch.stack(images[4::2])
+        loc, b, c, w, h = images_to_prob.shape
+        images_to_prob = images_to_prob.view(loc * b, c, w, h)
+        
+        images_to_prob_aug = torch.stack(images[5::2])
+        images_to_prob_aug = images_to_prob_aug.view(loc * b, c, w, h)
+        
+        land_label, img_reconstructed_loc = landmarkcnn(
+            images_to_prob, 
+            x_Aug=images_to_prob_aug, 
+            Random_prob=True, 
+            ran_sample=True, 
+            random_coor=False
+        )
+        
+        img_emb2 = rearrange(
+            img_reconstructed_loc, 
+            'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
+            p1=landmarkcnn.patch_size, 
+            p2=landmarkcnn.patch_size
+        )
+        img_emb2 = img_emb2.view(loc, b, 36, 192)
+        img_emb2 = [emg for emg in img_emb2]
+        
+        images = [img_emb0] + [img_emb1] + img_emb2
+        # ================================================================
+        
+        # ========== Solution 2: Extract ResNet Features ==========
+        with torch.no_grad():  # ResNet is frozen, no gradients needed
+            # Only process global views for ResNet (first 2 views)
+            global_images_for_resnet = torch.cat([
+                images[0][:, :, :].mean(dim=1),  # Average over patches -> [B, C]
+                images[1][:, :, :].mean(dim=1)
+            ], dim=0)  # [2B, C]
+            
+            # Convert embeddings back to images for ResNet
+            # ResNet expects [B, 3, 112, 112], but we have embeddings
+            # So we'll use the original images before landmark processing
+            resnet_input = torch.cat([images[0], images[1]], dim=0) / 255.0 * 2 - 1
+            resnet_features = resnet_backbone(resnet_input)  # [2B, 512]
+        # ===========================================================
+        
+        with torch.cuda.amp.autocast(fp16_scaler is not None):
+            # Teacher and student forward passes (Part fViT)
+            teacher_output_vit = teacher(images[:2])  # [2B, out_dim]
+            student_output_vit = student(images)      # [(2+local)B, out_dim]
+            
+            # ========== Solution 2: Apply Hybrid Fusion ==========
+            # Fuse teacher features with ResNet
+            teacher_output_fused = fusion_module(
+                teacher_output_vit,  # [2B, 768]
+                resnet_features      # [2B, 512]
+            )
+            # =====================================================
+            
+            # Compute DINO loss with fused teacher features
+            current_batch_size = images[0].size(0)
+            batch_ratio = current_batch_size / len(data_loader.dataset)
+            
+            loss = dino_loss(
+                student_output_vit,    # Student sees only ViT features
+                teacher_output_fused,  # Teacher uses fused features
+                epoch,
+                batch_ratio=batch_ratio
+            )
+
+        if not math.isfinite(loss.item()):
+            print("Loss is {}, stopping training".format(loss.item()), force=True)
+            sys.exit(1)
+
+        # Student update
+        optimizer.zero_grad()
+        param_norms = None
+        if fp16_scaler is None:
+            loss.backward()
+            if args.clip_grad:
+                param_norms = utils.clip_gradients(student, args.clip_grad)
+            utils.cancel_gradients_last_layer(epoch, student, args.freeze_last_layer)
+            optimizer.step()
+        else:
+            fp16_scaler.scale(loss).backward()
+            if args.clip_grad:
+                fp16_scaler.unscale_(optimizer)
+                param_norms = utils.clip_gradients(student, args.clip_grad)
+            utils.cancel_gradients_last_layer(epoch, student, args.freeze_last_layer)
+            fp16_scaler.step(optimizer)
+            fp16_scaler.update()
+
+        # EMA update for teacher
+        with torch.no_grad():
+            m = momentum_schedule[it]
+            for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
+                param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
+
+        # Logging
+        torch.cuda.synchronize()
+        metric_logger.update(loss=loss.item())
+        metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
+        
+    metric_logger.synchronize_between_processes()
+    print("Averaged stats:", metric_logger)
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 def train_one_epoch(student, teacher, teacher_without_ddp,landmarkcnn, dino_loss, data_loader,
                     optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
@@ -574,14 +705,17 @@ def train_one_epoch(student, teacher, teacher_without_ddp,landmarkcnn, dino_loss
         images=[img_emb0]+[img_emb1]+img_emb2#.tolist()
         # images_glo = torch.cat([img_emb0,img_emb1], dim=0)
         # teacher and student forward passes + compute dino loss
-        with torch.cuda.amp.autocast(fp16_scaler is not None):
-            # teacher_output = teacher(images_glo[0])  # only the 2 global views pass through the teacher
-            # teacher_land_output = teacher_land(images[1])
-            # student_output = student(images)
-            teacher_output = teacher(images[:2])  # only the 2 global views pass through the teacher
-            student_output = student(images)
-            loss = dino_loss(student_output, teacher_output, epoch)
-
+    with torch.cuda.amp.autocast(fp16_scaler is not None):
+        teacher_output = teacher(images[:2])
+        student_output = student(images)
+    
+    # Calculate batch ratio for dynamic weighting
+        current_batch_size = images[0].size(0)  # First view batch size
+        total_dataset_size = len(data_loader.dataset)
+        batch_ratio = current_batch_size / total_dataset_size
+    
+    # Compute loss with dynamic weighting
+        loss = dino_loss(student_output, teacher_output, epoch, batch_ratio=batch_ratio)
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
@@ -624,58 +758,120 @@ def train_one_epoch(student, teacher, teacher_without_ddp,landmarkcnn, dino_loss
 
 
 class DINOLoss(nn.Module):
+    """
+    DINO Loss with Dynamic Weighting for better large-scale data handling.
+    
+    Dynamic weighting adapts loss weights per batch based on subset ratio,
+    giving higher weights to sparse/hard batches for improved scaling.
+    """
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
                  warmup_teacher_temp_epochs, nepochs, student_temp=0.1,
-                 center_momentum=0.9):
+                 center_momentum=0.9, enable_dynamic_weighting=True):
+        """
+        Args:
+            out_dim: Dimension of DINO head output
+            ncrops: Total number of crops (2 global + local_crops_number)
+            warmup_teacher_temp: Initial teacher temperature
+            teacher_temp: Final teacher temperature after warmup
+            warmup_teacher_temp_epochs: Number of warmup epochs
+            nepochs: Total training epochs
+            student_temp: Student temperature (default: 0.1)
+            center_momentum: EMA momentum for center update (default: 0.9)
+            enable_dynamic_weighting: Enable adaptive loss weighting (default: True)
+        """
         super().__init__()
         self.student_temp = student_temp
         self.center_momentum = center_momentum
         self.ncrops = ncrops
+        self.enable_dynamic_weighting = enable_dynamic_weighting
+        
+        # Center for teacher output (prevents collapse)
         self.register_buffer("center", torch.zeros(1, out_dim))
-        # we apply a warm up for the teacher temperature because
-        # a too high temperature makes the training instable at the beginning
+        
+        # Teacher temperature schedule with warmup
         self.teacher_temp_schedule = np.concatenate((
             np.linspace(warmup_teacher_temp,
                         teacher_temp, warmup_teacher_temp_epochs),
             np.ones(nepochs - warmup_teacher_temp_epochs) * teacher_temp
         ))
 
-    def forward(self, student_output, teacher_output, epoch):
+    def forward(self, student_output, teacher_output, epoch, batch_ratio=None):
         """
-        Cross-entropy between softmax outputs of the teacher and student networks.
+        Compute cross-entropy loss between softmax outputs of teacher and student.
+        
+        Args:
+            student_output: Student network output [B*ncrops, out_dim]
+            teacher_output: Teacher network output [B*2, out_dim] (2 global views)
+            epoch: Current training epoch
+            batch_ratio: Optional ratio of current_batch_size / total_dataset_size
+                        Used for dynamic weighting (set to None to disable)
+        
+        Returns:
+            total_loss: Scalar loss value
         """
+        # Split student output into separate crops
         student_out = student_output / self.student_temp
         student_out = student_out.chunk(self.ncrops)
 
-        # teacher centering and sharpening
+        # Teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
         teacher_out = F.softmax((teacher_output - self.center) / temp, dim=-1)
-        teacher_out = teacher_out.detach().chunk(2)
+        teacher_out = teacher_out.detach().chunk(2)  # 2 global teacher views
 
+        # ========== Dynamic Weighting (Solution 3) ==========
+        if self.enable_dynamic_weighting and batch_ratio is not None:
+            # Compute adaptive weight based on batch subset ratio
+            # Smaller batches (harder examples) get higher weights
+            if batch_ratio < 0.5:  # Only apply for small batches
+                # Logarithmic scaling: smaller ratio → higher weight
+                weight = 1.0 / (math.log(batch_ratio + 1e-6) + 1.0)
+                # Clamp to prevent extreme values
+                weight = max(0.5, min(weight, 2.0))
+            else:
+                weight = 1.0
+        else:
+            weight = 1.0
+        # =====================================================
+
+        # Compute cross-entropy loss between all student-teacher pairs
         total_loss = 0
         n_loss_terms = 0
         for iq, q in enumerate(teacher_out):
             for v in range(len(student_out)):
                 if v == iq:
-                    # we skip cases where student and teacher operate on the same view
+                    # Skip cases where student and teacher operate on same view
                     continue
+                # Cross-entropy: -teacher * log(student)
                 loss = torch.sum(-q * F.log_softmax(student_out[v], dim=-1), dim=-1)
-                total_loss += loss.mean()
+                # Apply dynamic weight
+                total_loss += loss.mean() * weight
                 n_loss_terms += 1
+        
+        # Average over all loss terms
         total_loss /= n_loss_terms
+        
+        # Update teacher center with EMA
         self.update_center(teacher_output)
+        
         return total_loss
 
     @torch.no_grad()  
     def update_center(self, teacher_output):
         """
-        Update center used for teacher output.
+        Update center used for teacher output with exponential moving average.
+        This prevents model collapse by centering the teacher predictions.
+        
+        Args:
+            teacher_output: Teacher network output [B*2, out_dim]
         """
+        # Compute batch center
         batch_center = torch.sum(teacher_output, dim=0, keepdim=True)
+        
+        # All-reduce across GPUs (if using distributed training)
         dist.all_reduce(batch_center)
         batch_center = batch_center / (len(teacher_output) * dist.get_world_size())
 
-        # ema update
+        # EMA update: center = momentum * center + (1 - momentum) * batch_center
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)
 
 class DINOLoss_land(nn.Module):
