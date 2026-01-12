@@ -233,11 +233,16 @@ def train_lafs(args):
             emb_dropout=0.1
         )
         landmarkcnn = landmarkcnn.cuda()
+    if args.landmark_path and os.path.isfile(args.landmark_path):
+        print(f"✅ Loading landmark checkpoint: {args.landmark_path}")
         load_part_checkpoint_landmark(
-            path=args.landmark_path,
-            model=landmarkcnn,
-            pretrain_name=['stn', 'output']
+        path=args.landmark_path,
+        model=landmarkcnn,
+        pretrain_name=['stn','output']
         )
+    else:
+        print("⚠ Landmark checkpoint not found.")
+        print("⚠ Running LAFS WITHOUT landmark guidance.")
         landmarkcnn.eval()
         print("✓ Landmark CNN loaded")
 
