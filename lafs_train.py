@@ -408,13 +408,13 @@ def train_lafs(args):
         data_loader.sampler.set_epoch(epoch)
 
         # ============ training one epoch ... ============
-        train_stats = train_one_epoch_hybrid(  # Use new training function
+        train_stats = train_one_epoch_hybrid(  # ✅ Use hybrid version
             student, teacher, teacher_without_ddp, landmarkcnn, 
-            resnet_backbone, fusion_module,  # Pass new modules
+            resnet_backbone, fusion_module,  # Include new modules
             dino_loss, data_loader, optimizer, 
             lr_schedule, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, args
-        )
+                                        )
 
         # ============ writing logs ... ============
         save_dict = {
