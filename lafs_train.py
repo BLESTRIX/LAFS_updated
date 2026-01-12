@@ -293,7 +293,6 @@ def train_lafs(args):
         vit_dim=768,      # Part fViT output dimension
         resnet_dim=512,   # ResNet output dimension
         out_dim=768,      # Keep same as ViT for DINO head
-        num_heads=8
     )
     fusion_module = fusion_module.cuda()
     print("✓ Hybrid Fusion module created")
