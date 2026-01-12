@@ -184,7 +184,7 @@ def train_lafs(args):
                           )
     from torch.utils.data import DataLoader
 
-    loader = DataLoader(
+    data_loader = DataLoader(
     dataset,
     batch_size=256,
     shuffle=True,
