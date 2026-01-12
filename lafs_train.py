@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from datasets.csv_datasets import CSVDataset
+from datasets.csv_dataset import CSVDataset
 import torch
 import torch.nn as nn
 import torch.distributed as dist
