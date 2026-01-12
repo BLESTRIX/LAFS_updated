@@ -794,12 +794,11 @@ class DINOLoss(nn.Module):
         self.register_buffer("center", torch.zeros(1, out_dim))
         
         # Teacher temperature schedule with warmup
+        length = max(nepochs - warmup_teacher_temp_epochs, 0)
         self.teacher_temp_schedule = np.concatenate((
-            np.linspace(warmup_teacher_temp,
-                        teacher_temp, warmup_teacher_temp_epochs),
-            np.ones(nepochs - warmup_teacher_temp_epochs) * teacher_temp
+            np.linspace(warmup_teacher_temp, teacher_temp, warmup_teacher_temp_epochs),
+            np.ones(length) * teacher_temp
         ))
-
     def forward(self, student_output, teacher_output, epoch, batch_ratio=None):
         """
         Compute cross-entropy loss between softmax outputs of teacher and student.
