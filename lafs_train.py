@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from datasets.csv_datasets import CSVDataset
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -168,29 +169,29 @@ def train_lafs(args):
         args.local_crops_number,
     )
     
-    from face_pre_pro.dataloader_web import FaceDataset
-    
-    dataset = FaceDataset(
-        os.path.join(data_path, 'train.rec'), 
-        dino_trans=transform,
-        rand_mirror=False,
-        random_resizecrop=False,
-        rand_au=False,
-        sifenzhiyi=True,
-        filepath_id_nidex='ms1m_random_index.json'
-    )
+    from datasets.csv_dataset import CSVDataset
+    from torchvision import transforms
 
-    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
-    data_loader = torch.utils.data.DataLoader(
-        dataset,
-        sampler=sampler,
-        batch_size=args.batch_size_per_gpu,
-        num_workers=args.num_workers,
-        pin_memory=True,
-        drop_last=True,
-    )
-    print(f"Data loaded: there are {len(dataset)} images.")
+    transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+                        ])
+
+    dataset = CSVDataset(
+    csv_path="/content/drive/MyDrive/LAFS_datasets/extracted_0_0/labels.csv",
+    root_dir="/content/drive/MyDrive/LAFS_datasets/extracted_0_0",
+    transform=transform
+                          )
+    from torch.utils.data import DataLoader
+
+    loader = DataLoader(
+    dataset,
+    batch_size=256,
+    shuffle=True,
+    num_workers=2,
+    pin_memory=True
+              )
+
 
     # ============ building networks ... ============
     from face_pre_pro.ViT_face import ViT_face_landmark_patch8, face_landmark_4simmin_glo_loc, HybridFusion
