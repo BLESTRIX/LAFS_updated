@@ -110,7 +110,7 @@ def get_args_parser():
     parser.add_argument('--data_path', default='/data/scratch/acw569/webface_4m/ms1mv3/ms1m-retinaface-t1', type=str,
         help='Please specify path to the Face training data, using MXNet format, i.e. .rec file.')
         #landmark_path
-    parser.add_argument('--landmark_path', default='/data/home/acw569/precheck/ms1m_196_land_sp/Backbone_VIT_land_8_Epoch_34_Batch_523881_Time_2021-07-31-11-07_checkpoint.pth', type=str,
+    parser.add_argument('--landmark_path', default='', type=str,
         help='Please specify path to the Pretrained landmark CNN.')
     parser.add_argument('--output_dir', default="/data/scratch/acw569/checkpoint/ssl/ms1m_land_ms1mland_1m_40epoch_noflip", type=str, 
                 help='Path to save logs and checkpoints.')
